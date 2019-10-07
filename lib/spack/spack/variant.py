@@ -409,6 +409,11 @@ class MultiValuedVariant(AbstractVariant):
         return super_sat and (all(v in self.value for v in other.value) or
                               'any' in other or 'any' in self)
 
+    def append(self, value):
+        """Add another value to this multi-valued variant."""
+        self._value = tuple(sorted((value,) + self._value))
+        self._original_value = ",".join(self._value)
+
 
 class SingleValuedVariant(AbstractVariant):
     """A variant that can hold multiple values, but one at a time."""
