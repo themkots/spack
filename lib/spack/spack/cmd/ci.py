@@ -364,9 +364,26 @@ def ci_rebuild(args):
             # 4) create buildcache on remote mirror, but not if this is
             # running to test a spack PR
             if not spack_is_pr_pipeline:
-                spack_ci.push_mirror_contents(
-                    env, job_spec, job_spec_yaml_path, remote_mirror_url,
-                    cdash_build_id, sign_binaries)
+                try:
+                    spack_ci.push_mirror_contents(
+                        env, job_spec, job_spec_yaml_path, remote_mirror_url,
+                        cdash_build_id, sign_binaries)
+                except Exception as inst:
+                    # If the mirror we're pushing to is on S3 and there's some
+                    # permissions problem, for example, we can't just target
+                    # that exception type here, since users of the
+                    # `spack ci rebuild' may not need or want any dependency
+                    # on boto3.  So we use the first non-boto exception type
+                    # in the heirarchy:
+                    #     boto3.exceptions.S3UploadFailedError
+                    #     boto3.exceptions.Boto3Error
+                    #     Exception
+                    #     BaseException
+                    #     object
+                    err_msg = 'Error msg: {0}'.format(inst)
+                    if 'Access Denied' in err_msg:
+                        tty.msg('Permission problem writing to mirror')
+                    tty.msg(err_msg)
 
             # 5) create another copy of that buildcache on "local artifact
             # mirror" (only done if cash reporting is enabled)
