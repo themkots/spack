@@ -33,6 +33,7 @@ import spack.repo
 from spack.spec import Spec
 import spack.util.spack_yaml as syaml
 import spack.util.web as web_util
+import spack.util.gpg as gpg_util
 
 
 JOB_RETRY_CONDITIONS = [
@@ -904,6 +905,14 @@ def import_signing_key(base64_signing_key):
     tty.debug(signing_keys_output)
 
 
+def can_sign_binaries():
+    return len(gpg_util.signing_keys()) == 1
+
+
+def can_verify_binaries():
+    return len(gpg_util.public_keys()) >= 1
+
+
 def configure_compilers(compiler_action, scope=None):
     if compiler_action == 'INSTALL_MISSING':
         tty.debug('Make sure bootstrapped compiler will be installed')
@@ -1079,12 +1088,15 @@ def read_cdashid_from_mirror(spec, mirror_url):
     return int(contents)
 
 
-def push_mirror_contents(env, spec, yaml_path, mirror_url, build_id):
+def push_mirror_contents(env, spec, yaml_path, mirror_url, build_id,
+                         sign_binaries):
     if mirror_url:
-        tty.debug('Creating buildcache')
+        unsigned = not sign_binaries
+        tty.debug('Creating buildcache ({0})'.format(
+            'unsigned' if unsigned else 'signed'))
         buildcache._createtarball(env, spec_yaml=yaml_path, add_deps=False,
                                   output_location=mirror_url, force=True,
-                                  allow_root=True)
+                                  allow_root=True, unsigned=unsigned)
         if build_id:
             tty.debug('Writing cdashid ({0}) to remote mirror: {1}'.format(
                 build_id, mirror_url))

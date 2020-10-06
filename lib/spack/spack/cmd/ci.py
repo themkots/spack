@@ -249,6 +249,12 @@ def ci_rebuild(args):
         if signing_key:
             spack_ci.import_signing_key(signing_key)
 
+        can_sign = spack_ci.can_sign_binaries()
+        sign_binaries = can_sign and spack_is_pr_pipeline is False
+
+        can_verify = spack_ci.can_verify_binaries()
+        verify_binaries = can_verify and spack_is_pr_pipeline is False
+
         spack_ci.configure_compilers(compiler_action)
 
         spec_map = spack_ci.get_concrete_specs(
@@ -291,6 +297,9 @@ def ci_rebuild(args):
 
             # 2) build up install arguments
             install_args = ['-d', '-v', '-k', 'install', '--keep-stage']
+
+            if not verify_binaries:
+                install_args.append('--no-check-signature')
 
             # 3) create/register a new build on CDash (if enabled)
             cdash_args = []
@@ -357,12 +366,13 @@ def ci_rebuild(args):
             if not spack_is_pr_pipeline:
                 spack_ci.push_mirror_contents(
                     env, job_spec, job_spec_yaml_path, remote_mirror_url,
-                    cdash_build_id)
+                    cdash_build_id, sign_binaries)
 
             # 5) create another copy of that buildcache on "local artifact
             # mirror" (only done if cash reporting is enabled)
             spack_ci.push_mirror_contents(env, job_spec, job_spec_yaml_path,
-                                          artifact_mirror_url, cdash_build_id)
+                                          artifact_mirror_url, cdash_build_id,
+                                          sign_binaries)
 
             # 6) relate this build to its dependencies on CDash (if enabled)
             if enable_cdash:
