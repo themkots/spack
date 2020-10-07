@@ -575,10 +575,15 @@ def generate_package_index(cache_prefix):
                            enable_transaction_locking=False,
                            record_fields=['spec', 'ref_count'])
 
-    file_list = (
-        entry
-        for entry in web_util.list_url(cache_prefix)
-        if entry.endswith('.yaml'))
+    try:
+        file_list = (
+            entry
+            for entry in web_util.list_url(cache_prefix)
+            if entry.endswith('.yaml'))
+    except KeyError as inst:
+        msg = 'No packages at {0}: {1}'.format(cache_prefix, inst)
+        tty.warn(msg)
+        return
 
     tty.debug('Retrieving spec.yaml files from {0} to build index'.format(
         cache_prefix))
@@ -640,10 +645,15 @@ def generate_key_index(key_prefix, tmpdir=None):
                         url_util.format(key_prefix),
                         'to build key index')))
 
-    fingerprints = (
-        entry[:-4]
-        for entry in web_util.list_url(key_prefix, recursive=False)
-        if entry.endswith('.pub'))
+    try:
+        fingerprints = (
+            entry[:-4]
+            for entry in web_util.list_url(key_prefix, recursive=False)
+            if entry.endswith('.pub'))
+    except KeyError as inst:
+        msg = 'No keys at {0}: {1}'.format(cache_prefix, inst)
+        tty.warn(msg)
+        return
 
     keys_local = url_util.local_file_path(key_prefix)
     if keys_local:
