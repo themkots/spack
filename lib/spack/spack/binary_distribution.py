@@ -584,6 +584,14 @@ def generate_package_index(cache_prefix):
         msg = 'No packages at {0}: {1}'.format(cache_prefix, inst)
         tty.warn(msg)
         return
+    except Exception as err:
+        # If we got some kind of S3 (access denied or other connection
+        # error), the first non boto-specific class in the exception
+        # hierarchy is Exception.  Just print a warning and return
+        msg = 'Encountered problem listing keys at {0}: {1}'.format(
+            cache_prefix, err)
+        tty.warn(msg)
+        return
 
     tty.debug('Retrieving spec.yaml files from {0} to build index'.format(
         cache_prefix))
@@ -652,6 +660,14 @@ def generate_key_index(key_prefix, tmpdir=None):
             if entry.endswith('.pub'))
     except KeyError as inst:
         msg = 'No keys at {0}: {1}'.format(key_prefix, inst)
+        tty.warn(msg)
+        return
+    except Exception as err:
+        # If we got some kind of S3 (access denied or other connection
+        # error), the first non boto-specific class in the exception
+        # hierarchy is Exception.  Just print a warning and return
+        msg = 'Encountered problem listing keys at {0}: {1}'.format(
+            key_prefix, err)
         tty.warn(msg)
         return
 
