@@ -23,8 +23,6 @@ description = "manage continuous integration pipelines"
 section = "build"
 level = "long"
 
-spack_cmd = exe.which('spack')
-
 
 def get_env_var(variable_name):
     if variable_name in os.environ:
@@ -98,18 +96,18 @@ def ci_generate(args):
         shutil.copyfile(output_file, copy_yaml_to)
 
 
-def add_mirror(mirror_name, mirror_url):
-    m_args = ['mirror', 'add', mirror_name, mirror_url]
-    tty.debug('Adding mirror: spack {0}'.format(m_args))
-    mirror_add_output = spack_cmd(*m_args)
-    tty.debug('spack mirror add output: {0}'.format(mirror_add_output))
+# def add_mirror(mirror_name, mirror_url):
+#     m_args = ['mirror', 'add', mirror_name, mirror_url]
+#     tty.debug('Adding mirror: spack {0}'.format(m_args))
+#     mirror_add_output = spack_cmd(*m_args)
+#     tty.debug('spack mirror add output: {0}'.format(mirror_add_output))
 
 
-def remove_mirror(mirror_name):
-    m_args = ['mirror', 'rm', mirror_name]
-    tty.debug('Removing mirror: spack {0}'.format(m_args))
-    mirror_rm_output = spack_cmd(*m_args)
-    tty.debug('spack mirror rm output: {0}'.format(mirror_rm_output))
+# def remove_mirror(mirror_name):
+#     m_args = ['mirror', 'rm', mirror_name]
+#     tty.debug('Removing mirror: spack {0}'.format(m_args))
+#     mirror_rm_output = spack_cmd(*m_args)
+#     tty.debug('spack mirror rm output: {0}'.format(mirror_rm_output))
 
 
 def ci_rebuild(args):
@@ -294,6 +292,21 @@ def ci_rebuild(args):
         with open(root_spec_yaml_path, 'w') as fd:
             fd.write(spec_map['root'].to_yaml(hash=ht.build_hash))
 
+        spack_cmd = exe.which('spack')
+
+        def add_mirror(mirror_name, mirror_url):
+            m_args = ['mirror', 'add', mirror_name, mirror_url]
+            tty.debug('Adding mirror: spack {0}'.format(m_args))
+            mirror_add_output = spack_cmd(*m_args)
+            tty.debug('spack mirror add output: {0}'.format(mirror_add_output))
+
+
+        def remove_mirror(mirror_name):
+            m_args = ['mirror', 'rm', mirror_name]
+            tty.debug('Removing mirror: spack {0}'.format(m_args))
+            mirror_rm_output = spack_cmd(*m_args)
+            tty.debug('spack mirror rm output: {0}'.format(mirror_rm_output))
+
         # Configure mirrors
         if pr_mirror_url:
             add_mirror('pr_mirror', pr_mirror_url)
@@ -304,6 +317,8 @@ def ci_rebuild(args):
         mirror_list_output = spack_cmd('mirror', 'list')
         tty.debug('listing spack mirrors:')
         tty.debug(mirror_list_output)
+
+        spack_cmd('config', 'blame', 'mirrors')
 
         # Checks all mirrors for a built spec with a matching full hash
         matches = bindist.get_spec(job_spec, force=False, full_hash_match=True)
@@ -432,7 +447,9 @@ def ci_rebuild(args):
             if enable_cdash:
                 spack_ci.relate_cdash_builds(
                     spec_map, cdash_base_url, cdash_build_id, cdash_project,
-                    artifact_mirror_url or remote_mirror_url)
+                    artifact_mirror_url or pr_mirror_url or remote_mirror_url)
+
+        spack_cmd('config', 'blame', 'mirrors')
 
         # Clean up mirrors
         if pr_mirror_url:
