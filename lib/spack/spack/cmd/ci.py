@@ -314,6 +314,9 @@ def ci_rebuild(args):
         # Checks all mirrors for a built spec with a matching full hash
         matches = bindist.get_spec(job_spec, force=False, full_hash_match=True)
 
+        tty.debug('Before I test matches, here it is:')
+        tty.debug(matches)
+
         if matches:
             # Got at full hash match on at least one configured mirror.  All
             # matches represent the fully up-to-date spec, so should all be
