@@ -23,6 +23,8 @@ description = "manage continuous integration pipelines"
 section = "build"
 level = "long"
 
+spack_cmd = exe.which('spack')
+
 
 def get_env_var(variable_name):
     if variable_name in os.environ:
@@ -96,6 +98,20 @@ def ci_generate(args):
         shutil.copyfile(output_file, copy_yaml_to)
 
 
+def add_mirror(mirror_name, mirror_url):
+    m_args = ['mirror', 'add', mirror_name, mirror_url]
+    tty.debug('Adding mirror: spack {0}'.format(m_args))
+    mirror_add_output = spack_cmd(*m_args)
+    tty.debug('spack mirror add output: {0}'.format(mirror_add_output))
+
+
+def remove_mirror(mirror_name):
+    m_args = ['mirror', 'rm', mirror_name]
+    tty.debug('Removing mirror: spack {0}'.format(m_args))
+    mirror_rm_output = spack_cmd(*m_args)
+    tty.debug('spack mirror rm output: {0}'.format(mirror_rm_output))
+
+
 def ci_rebuild(args):
     """This command represents a gitlab-ci job, corresponding to a single
        release spec.  As such it must first decide whether or not the spec it
@@ -138,6 +154,7 @@ def ci_rebuild(args):
     cdash_build_name = get_env_var('SPACK_CDASH_BUILD_NAME')
     related_builds = get_env_var('SPACK_RELATED_BUILDS_CDASH')
     pr_env_var = get_env_var('SPACK_IS_PR_PIPELINE')
+    pr_mirror_url = get_env_var('SPACK_PR_MIRROR_URL')
 
     gitlab_ci = None
     if 'gitlab-ci' in yaml_root:
@@ -179,8 +196,6 @@ def ci_rebuild(args):
     tty.debug('remote_mirror_url = {0}'.format(remote_mirror_url))
     tty.debug('job_spec_pkg_name = {0}'.format(job_spec_pkg_name))
     tty.debug('compiler_action = {0}'.format(compiler_action))
-
-    spack_cmd = exe.which('spack')
 
     cdash_report_dir = os.path.join(ci_artifact_dir, 'cdash_report')
     temp_dir = os.path.join(ci_artifact_dir, 'jobs_scratch_dir')
@@ -279,29 +294,47 @@ def ci_rebuild(args):
         with open(root_spec_yaml_path, 'w') as fd:
             fd.write(spec_map['root'].to_yaml(hash=ht.build_hash))
 
-        if bindist.needs_rebuild(job_spec, remote_mirror_url, True):
+        # Configure mirrors
+        if pr_mirror_url:
+            add_mirror('pr_mirror', pr_mirror_url)
+
+        if enable_artifacts_mirror:
+            add_mirror('local_mirror', artifact_mirror_url)
+
+        mirror_list_output = spack_cmd('mirror', 'list')
+        tty.debug('listing spack mirrors:')
+        tty.debug(mirror_list_output)
+
+        # Checks all mirrors for a built spec with a matching full hash
+        matches = bindist.get_spec(job_spec, force=False, full_hash_match=True)
+
+        if matches:
+            # Got at full hash match on at least one configured mirror.  All
+            # matches represent the fully up-to-date spec, so should all be
+            # equivalent.  If artifacts mirror is enabled, we just pick one
+            # of the matches and download the buildcache files from there to
+            # the artifacts, so they're available to be used by dependent
+            # jobs in subsequent stages.
+            tty.debug('No need to rebuild {0}'.format(job_spec_pkg_name))
+            if enable_artifacts_mirror:
+                matching_mirror = matches[0]['mirror_url']
+                tty.debug('Getting {0} buildcache from {1}'.format(
+                    job_spec_pkg_name, matching_mirror))
+                tty.debug('Downloading to {0}'.format(build_cache_dir))
+                buildcache.download_buildcache_files(
+                    job_spec, build_cache_dir, True, matching_mirror)
+        else:
             # Binary on remote mirror is not up to date, we need to rebuild
             # it.
-            #
-            # FIXME: ensure mirror precedence causes this local mirror to
-            # be chosen ahead of the remote one when installing deps
-            if enable_artifacts_mirror:
-                mirror_add_output = spack_cmd(
-                    'mirror', 'add', 'local_mirror', artifact_mirror_url)
-                tty.debug('spack mirror add:')
-                tty.debug(mirror_add_output)
 
-            mirror_list_output = spack_cmd('mirror', 'list')
-            tty.debug('listing spack mirrors:')
-            tty.debug(mirror_list_output)
-
-            # 2) build up install arguments
+            # Build up common install arguments
             install_args = ['-d', '-v', '-k', 'install', '--keep-stage']
 
             if not verify_binaries:
                 install_args.append('--no-check-signature')
 
-            # 3) create/register a new build on CDash (if enabled)
+            # Add arguments to create + register a new build on CDash (if
+            # enabled)
             cdash_args = []
             if enable_cdash:
                 tty.debug('Registering build with CDash')
@@ -361,52 +394,56 @@ def ci_rebuild(args):
 
             spack_ci.copy_stage_logs_to_artifacts(job_spec, job_log_dir)
 
-            # 4) create buildcache on remote mirror, but not if this is
-            # running to test a spack PR
-            if not spack_is_pr_pipeline:
-                try:
-                    spack_ci.push_mirror_contents(
-                        env, job_spec, job_spec_yaml_path, remote_mirror_url,
-                        cdash_build_id, sign_binaries)
-                except Exception as inst:
-                    # If the mirror we're pushing to is on S3 and there's some
-                    # permissions problem, for example, we can't just target
-                    # that exception type here, since users of the
-                    # `spack ci rebuild' may not need or want any dependency
-                    # on boto3.  So we use the first non-boto exception type
-                    # in the heirarchy:
-                    #     boto3.exceptions.S3UploadFailedError
-                    #     boto3.exceptions.Boto3Error
-                    #     Exception
-                    #     BaseException
-                    #     object
-                    err_msg = 'Error msg: {0}'.format(inst)
-                    if 'Access Denied' in err_msg:
-                        tty.msg('Permission problem writing to mirror')
-                    tty.msg(err_msg)
+            # Create buildcache on remote mirror, either on pr-specific
+            # mirror or on mirror defined in spack environment
+            if spack_is_pr_pipeline:
+                buildcache_mirror_url = pr_mirror_url
+            else:
+                buildcache_mirror_url = remote_mirror_url
 
-            # 5) create another copy of that buildcache on "local artifact
-            # mirror" (only done if cash reporting is enabled)
+            try:
+                spack_ci.push_mirror_contents(
+                    env, job_spec, job_spec_yaml_path, buildcache_mirror_url,
+                    cdash_build_id, sign_binaries)
+            except Exception as inst:
+                # If the mirror we're pushing to is on S3 and there's some
+                # permissions problem, for example, we can't just target
+                # that exception type here, since users of the
+                # `spack ci rebuild' may not need or want any dependency
+                # on boto3.  So we use the first non-boto exception type
+                # in the heirarchy:
+                #     boto3.exceptions.S3UploadFailedError
+                #     boto3.exceptions.Boto3Error
+                #     Exception
+                #     BaseException
+                #     object
+                err_msg = 'Error msg: {0}'.format(inst)
+                if 'Access Denied' in err_msg:
+                    tty.msg('Permission problem writing to mirror')
+                tty.msg(err_msg)
+
+            # Create another copy of that buildcache on "local artifact
+            # mirror" (only done if artifacts buildcache is enabled)
             spack_ci.push_mirror_contents(env, job_spec, job_spec_yaml_path,
                                           artifact_mirror_url, cdash_build_id,
                                           sign_binaries)
 
-            # 6) relate this build to its dependencies on CDash (if enabled)
+            # Relate this build to its dependencies on CDash (if enabled)
             if enable_cdash:
                 spack_ci.relate_cdash_builds(
                     spec_map, cdash_base_url, cdash_build_id, cdash_project,
                     artifact_mirror_url or remote_mirror_url)
-        else:
-            # There is nothing to do here unless "local artifact mirror" is
-            # enabled, in which case, we need to download the buildcache to
-            # the local artifacts directory to be used by dependent jobs in
-            # subsequent stages
-            tty.debug('No need to rebuild {0}'.format(job_spec_pkg_name))
-            if enable_artifacts_mirror:
-                tty.debug('Getting {0} buildcache'.format(job_spec_pkg_name))
-                tty.debug('Downloading to {0}'.format(build_cache_dir))
-                buildcache.download_buildcache_files(
-                    job_spec, build_cache_dir, True, remote_mirror_url)
+
+        # Clean up mirrors
+        if pr_mirror_url:
+            remove_mirror('pr_mirror')
+
+        if enable_artifacts_mirror:
+            remove_mirror('local_mirror')
+
+        mirror_list_output = spack_cmd('mirror', 'list')
+        tty.debug('listing spack mirrors:')
+        tty.debug(mirror_list_output)
 
 
 def ci(parser, args):

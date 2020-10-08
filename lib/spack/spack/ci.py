@@ -34,11 +34,14 @@ from spack.spec import Spec
 import spack.util.spack_yaml as syaml
 import spack.util.web as web_util
 import spack.util.gpg as gpg_util
+import spack.util.url as url_util
 
 
 JOB_RETRY_CONDITIONS = [
     'always',
 ]
+
+SPACK_PR_MIRRORS_ROOT_URL = 's3://spack-pr-mirrors'
 
 spack_gpg = spack.main.SpackCommand('gpg')
 spack_compiler = spack.main.SpackCommand('compiler')
@@ -530,6 +533,12 @@ def generate_gitlab_ci_yaml(env, print_summary, output_file,
         os.environ.get('SPACK_IS_PR_PIPELINE', '').lower() == 'true'
     )
 
+    spack_pr_branch = os.environ.get('SPACK_PR_BRANCH', None)
+    pr_mirror_url = None
+    if spack_pr_branch:
+        pr_mirror_url = url_util.join(SPACK_PR_MIRRORS_ROOT_URL,
+                                      spack_pr_branch)
+
     ci_mirrors = yaml_root['mirrors']
     mirror_urls = [url for url in ci_mirrors.values()]
 
@@ -842,6 +851,9 @@ def generate_gitlab_ci_yaml(env, print_summary, output_file,
         'SPACK_VERSION': spack_version,
         'SPACK_CHECKOUT_VERSION': version_to_clone,
     }
+
+    if pr_mirror_url:
+        output_object['variables']['SPACK_PR_MIRROR_URL'] = pr_mirror_url
 
     sorted_output = {}
     for output_key, output_value in sorted(output_object.items()):

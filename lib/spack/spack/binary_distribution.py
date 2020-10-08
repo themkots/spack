@@ -651,7 +651,7 @@ def generate_key_index(key_prefix, tmpdir=None):
             for entry in web_util.list_url(key_prefix, recursive=False)
             if entry.endswith('.pub'))
     except KeyError as inst:
-        msg = 'No keys at {0}: {1}'.format(cache_prefix, inst)
+        msg = 'No keys at {0}: {1}'.format(key_prefix, inst)
         tty.warn(msg)
         return
 
