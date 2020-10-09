@@ -1186,41 +1186,44 @@ def try_direct_fetch(spec, force=False, full_hash_match=False):
     found_specs = []
 
     tty.debug('try_direct_fetch checking mirrors for {0}'.format(spec.name))
-    scope = config.default_list_scope()
 
-    for mirror in spack.mirror.MirrorCollection(scope=scope).values():
-        buildcache_fetch_url = url_util.join(
-            mirror.fetch_url, _build_cache_relative_path, specfile_name)
+    for c_name, c_scope in config.scopes().items():
 
-        tty.debug('    checking {0}'.format(buildcache_fetch_url))
+        tty.debug('Trying config scope {0} -> {1}'.format(c_name, c_scope))
 
-        try:
-            _, _, fs = web_util.read_from_url(buildcache_fetch_url)
-            fetched_spec_yaml = codecs.getreader('utf-8')(fs).read()
-        except (URLError, web_util.SpackWebError, HTTPError) as url_err:
-            tty.debug('Did not find {0} on {1}'.format(
-                specfile_name, buildcache_fetch_url), url_err)
-            continue
+        for mirror in spack.mirror.MirrorCollection(scope=c_name).values():
+            buildcache_fetch_url = url_util.join(
+                mirror.fetch_url, _build_cache_relative_path, specfile_name)
 
-        # read the spec from the build cache file. All specs in build caches
-        # are concrete (as they are built) so we need to mark this spec
-        # concrete on read-in.
-        fetched_spec = Spec.from_yaml(fetched_spec_yaml)
-        fetched_spec._mark_concrete()
+            tty.debug('    checking {0}'.format(buildcache_fetch_url))
 
-        # Do not recompute the full hash for the fetched spec, instead just
-        # read the property.
-        if lenient or fetched_spec._full_hash == spec.full_hash():
-            tty.debug('Definitely got a full hash match at {0}'.format(mirror.fetch_url))
-            found_specs.append({
-                'mirror_url': mirror.fetch_url,
-                'spec': fetched_spec,
-            })
-        else:
-            tty.debug('Ignored {0} fournd at {1}'.format(
-                fetched_spec.name, mirror.fetch_url))
-            tty.debug('local full hash: {0}'.format(spec.full_hash()))
-            tty.debug('remote full hash: {0}'.format(fetched_spec._full_hash))
+            try:
+                _, _, fs = web_util.read_from_url(buildcache_fetch_url)
+                fetched_spec_yaml = codecs.getreader('utf-8')(fs).read()
+            except (URLError, web_util.SpackWebError, HTTPError) as url_err:
+                tty.debug('Did not find {0} on {1}'.format(
+                    specfile_name, buildcache_fetch_url), url_err)
+                continue
+
+            # read the spec from the build cache file. All specs in build caches
+            # are concrete (as they are built) so we need to mark this spec
+            # concrete on read-in.
+            fetched_spec = Spec.from_yaml(fetched_spec_yaml)
+            fetched_spec._mark_concrete()
+
+            # Do not recompute the full hash for the fetched spec, instead just
+            # read the property.
+            if lenient or fetched_spec._full_hash == spec.full_hash():
+                tty.debug('Definitely got a full hash match at {0}'.format(mirror.fetch_url))
+                found_specs.append({
+                    'mirror_url': mirror.fetch_url,
+                    'spec': fetched_spec,
+                })
+            else:
+                tty.debug('Ignored {0} fournd at {1}'.format(
+                    fetched_spec.name, mirror.fetch_url))
+                tty.debug('local full hash: {0}'.format(spec.full_hash()))
+                tty.debug('remote full hash: {0}'.format(fetched_spec._full_hash))
 
     tty.debug('try_direct_fetch is returning:')
     tty.debug(found_specs)
