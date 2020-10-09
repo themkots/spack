@@ -730,7 +730,7 @@ spack:
 
             # env, spec, yaml_path, mirror_url, build_id
             ci.push_mirror_contents(
-                env, concrete_spec, yaml_path, mirror_url, '42')
+                env, concrete_spec, yaml_path, mirror_url, '42', True)
 
             buildcache_path = os.path.join(mirror_dir.strpath, 'build_cache')
 
