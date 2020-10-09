@@ -300,18 +300,13 @@ def ci_rebuild(args):
         if enable_artifacts_mirror:
             add_mirror('local_mirror', artifact_mirror_url)
 
-        mirror_list_output = spack_cmd('mirror', 'list')
         tty.debug('listing spack mirrors:')
-        tty.debug(mirror_list_output)
-
+        spack_cmd('mirror', 'list')
         spack_cmd('config', 'blame', 'mirrors')
 
         # Checks all mirrors for a built spec with a matching full hash
         matches = bindist.get_spec(job_spec, force=False, full_hash_match=True,
                                    mirrors_to_check=mirrors_to_check)
-
-        tty.debug('Before I test matches, here it is:')
-        tty.debug(matches)
 
         if matches:
             # Got at full hash match on at least one configured mirror.  All
@@ -362,7 +357,7 @@ def ci_rebuild(args):
 
             install_args.append(job_spec_yaml_path)
 
-            tty.debug('Installing package')
+            tty.debug('Installing {0} from source'.format(job_spec.name))
 
             try:
                 tty.debug('spack install arguments: {0}'.format(
