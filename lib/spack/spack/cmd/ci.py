@@ -284,19 +284,14 @@ def ci_rebuild(args):
             fd.write(spec_map['root'].to_yaml(hash=ht.build_hash))
 
         spack_cmd = exe.which('spack')
+        mirrors_to_check = {}
 
         def add_mirror(mirror_name, mirror_url):
             m_args = ['mirror', 'add', mirror_name, mirror_url]
             tty.debug('Adding mirror: spack {0}'.format(m_args))
             mirror_add_output = spack_cmd(*m_args)
+            mirrors_to_check[mirror_name] = mirror_url
             tty.debug('spack mirror add output: {0}'.format(mirror_add_output))
-
-
-        def remove_mirror(mirror_name):
-            m_args = ['mirror', 'rm', mirror_name]
-            tty.debug('Removing mirror: spack {0}'.format(m_args))
-            mirror_rm_output = spack_cmd(*m_args)
-            tty.debug('spack mirror rm output: {0}'.format(mirror_rm_output))
 
         # Configure mirrors
         if pr_mirror_url:
@@ -312,7 +307,8 @@ def ci_rebuild(args):
         spack_cmd('config', 'blame', 'mirrors')
 
         # Checks all mirrors for a built spec with a matching full hash
-        matches = bindist.get_spec(job_spec, force=False, full_hash_match=True)
+        matches = bindist.get_spec(job_spec, force=False, full_hash_match=True,
+                                   mirrors_to_check=mirrors_to_check)
 
         tty.debug('Before I test matches, here it is:')
         tty.debug(matches)
